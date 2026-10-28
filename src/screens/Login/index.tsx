@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -10,41 +12,61 @@ import {
   View,
 } from 'react-native';
 import { LoginScreenProps } from '../../navigation/types';
+import { loginUser, getFriendlyErrorMessage } from '../../services/authService';
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    if (!username.trim() || !password.trim()) {
-      Alert.alert('Thông báo', 'Vui lòng nhập đầy đủ tài khoản và mật khẩu!');
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Thông báo', 'Vui lòng nhập đầy đủ tài khoản email và mật khẩu!');
       return;
     }
 
-    navigation.replace('Home');
+    setLoading(true);
+    try {
+      await loginUser(email, password);
+      navigation.replace('Home');
+    } catch (error: any) {
+      const code = error?.code || '';
+      const message = getFriendlyErrorMessage(code) || error?.message || 'Đăng nhập không thành công.';
+      Alert.alert('Lỗi đăng nhập', message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.inner}>
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
         <View style={styles.logoContainer}>
           <View style={styles.logoCircle}>
             <Text style={styles.logoIcon}>💬</Text>
           </View>
           <Text style={styles.appName}>PTIT CHAT</Text>
+          <Text style={styles.appSubtitle}>
+            Ứng dụng nhắn tin thời gian thực Firebase
+          </Text>
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.inputLabel}>Tài khoản</Text>
+          <Text style={styles.inputLabel}>Email tài khoản</Text>
           <TextInput
             style={styles.input}
-            placeholder="Nhập tài khoản hoặc email"
+            placeholder="Nhập email sinh viên (ví dụ: an@ptit.edu.vn)"
             placeholderTextColor="#999"
-            value={username}
-            onChangeText={setUsername}
+            value={email}
+            onChangeText={setEmail}
             autoCapitalize="none"
+            keyboardType="email-address"
+            editable={!loading}
           />
 
           <Text style={styles.inputLabel}>Mật khẩu</Text>
@@ -55,13 +77,31 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            editable={!loading}
           />
 
-          <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-            <Text style={styles.loginButtonText}>Đăng nhập</Text>
+          <TouchableOpacity
+            style={[styles.loginButton, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+            activeOpacity={0.8}>
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.loginButtonText}>Đăng nhập</Text>
+            )}
           </TouchableOpacity>
+
+          <View style={styles.registerRedirectContainer}>
+            <Text style={styles.registerRedirectText}>Chưa có tài khoản? </Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Register')}
+              disabled={loading}>
+              <Text style={styles.registerRedirectHighlight}>Đăng ký ngay</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 };
@@ -71,10 +111,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  inner: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: 28,
+    paddingVertical: 36,
   },
   logoContainer: {
     alignItems: 'center',
@@ -99,9 +140,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   appSubtitle: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#666',
     marginTop: 6,
+    textAlign: 'center',
   },
   form: {
     width: '100%',
@@ -131,10 +173,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 26,
   },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
   loginButtonText: {
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: 'bold',
+  },
+  registerRedirectContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 22,
+    alignItems: 'center',
+  },
+  registerRedirectText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  registerRedirectHighlight: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '600',
   },
 });
 

@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   StyleSheet,
@@ -8,25 +9,44 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { ContactItem, MOCK_CONTACTS } from '../../data/mockData';
+import { auth } from '../../services/firebase';
+import {
+  ContactUser,
+  subscribeToContacts,
+} from '../../services/chatService';
 import { ContactsTabProps } from '../../navigation/types';
 
 export const ContactsScreen: React.FC<ContactsTabProps> = ({ navigation }) => {
+  const [contacts, setContacts] = useState<ContactUser[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const currentUid = auth.currentUser?.uid || '';
+    const unsubscribe = subscribeToContacts(currentUid, contactList => {
+      setContacts(contactList);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const filteredContacts = useMemo(() => {
     if (!searchQuery.trim()) {
-      return MOCK_CONTACTS;
+      return contacts;
     }
-    const query = searchQuery.toLowerCase();
-    return MOCK_CONTACTS.filter(
+    const query = searchQuery.toLowerCase().trim();
+    return contacts.filter(
       item =>
         item.name.toLowerCase().includes(query) ||
-        item.phone.toLowerCase().includes(query),
+        (item.email && item.email.toLowerCase().includes(query)) ||
+        (item.phone && item.phone.toLowerCase().includes(query)),
     );
-  }, [searchQuery]);
+  }, [contacts, searchQuery]);
 
-  const handleOpenChat = (item: ContactItem) => {
+  const handleOpenChat = (item: ContactUser) => {
     navigation.navigate('ChatDetail', {
       userId: item.id,
       userName: item.name,
@@ -35,7 +55,7 @@ export const ContactsScreen: React.FC<ContactsTabProps> = ({ navigation }) => {
     });
   };
 
-  const renderContactItem = ({ item }: { item: ContactItem }) => {
+  const renderContactItem = ({ item }: { item: ContactUser }) => {
     return (
       <TouchableOpacity
         style={styles.contactItem}
@@ -52,9 +72,11 @@ export const ContactsScreen: React.FC<ContactsTabProps> = ({ navigation }) => {
         </View>
 
         <View style={styles.infoContainer}>
-          <Text style={styles.name}>{item.name}</Text>
+          <Text style={styles.name} numberOfLines={1}>
+            {item.name}
+          </Text>
           <Text style={styles.statusText} numberOfLines={1}>
-            {item.status}
+            {item.email || item.status}
           </Text>
         </View>
 
@@ -84,7 +106,7 @@ export const ContactsScreen: React.FC<ContactsTabProps> = ({ navigation }) => {
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
             style={styles.searchInput}
-            placeholder="Tìm kiếm theo tên, số điện thoại..."
+            placeholder="Tìm kiếm người dùng qua tên, email..."
             placeholderTextColor="#8E8E93"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -97,24 +119,35 @@ export const ContactsScreen: React.FC<ContactsTabProps> = ({ navigation }) => {
         </View>
       </View>
 
-      <FlatList
-        data={filteredContacts}
-        keyExtractor={item => item.id}
-        renderItem={renderContactItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          <Text style={styles.sectionTitle}>
-            Tất cả liên hệ ({filteredContacts.length})
-          </Text>
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>👤</Text>
-            <Text style={styles.emptyText}>Không tìm thấy liên hệ nào</Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>Đang tải danh bạ từ Firebase...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredContacts}
+          keyExtractor={item => item.id}
+          renderItem={renderContactItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <Text style={styles.sectionTitle}>
+              Tất cả liên hệ ({filteredContacts.length})
+            </Text>
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyIcon}>👤</Text>
+              <Text style={styles.emptyText}>
+                {searchQuery.trim()
+                  ? 'Không tìm thấy liên hệ phù hợp'
+                  : 'Chưa có người dùng nào khác đăng ký'}
+              </Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 };
@@ -238,6 +271,16 @@ const styles = StyleSheet.create({
   badgeTextOffline: {
     color: '#8E8E93',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#8E8E93',
+  },
   emptyContainer: {
     paddingTop: 60,
     alignItems: 'center',
@@ -249,6 +292,8 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 15,
     color: '#8E8E93',
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
 });
 

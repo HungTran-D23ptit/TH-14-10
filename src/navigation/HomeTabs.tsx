@@ -1,6 +1,7 @@
 import React from 'react';
 import { Image, StyleSheet, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MainTabParamList } from './types';
 import ChatsScreen from '../screens/Chats';
 import ContactsScreen from '../screens/Contacts';
@@ -47,6 +48,9 @@ const renderSettingsIcon = ({ size }: IconProps) => (
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export const HomeTabs: React.FC = () => {
+  const insets = useSafeAreaInsets();
+  const bottomPadding = Math.max(insets.bottom, 10);
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -55,8 +59,8 @@ export const HomeTabs: React.FC = () => {
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
           borderTopColor: '#EBEBEB',
-          height: 56,
-          paddingBottom: 6,
+          height: 55 + bottomPadding,
+          paddingBottom: bottomPadding,
           paddingTop: 6,
         },
         tabBarLabelStyle: {

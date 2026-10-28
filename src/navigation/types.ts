@@ -4,6 +4,7 @@ import type { CompositeScreenProps } from '@react-navigation/native';
 
 export type RootStackParamList = {
   Login: undefined;
+  Register: undefined;
   Home: undefined;
   ChatDetail: {
     userId: string;
@@ -21,6 +22,7 @@ export type MainTabParamList = {
 };
 
 export type LoginScreenProps = NativeStackScreenProps<RootStackParamList, 'Login'>;
+export type RegisterScreenProps = NativeStackScreenProps<RootStackParamList, 'Register'>;
 export type ChatDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'ChatDetail'>;
 
 export type ChatsTabProps = CompositeScreenProps<

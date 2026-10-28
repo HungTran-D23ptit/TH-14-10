@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   StyleSheet,
@@ -8,25 +9,54 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { ConversationItem, MOCK_CONVERSATIONS } from '../../data/mockData';
+import { auth } from '../../services/firebase';
+import {
+  ConversationItem,
+  markConversationAsRead,
+  subscribeToConversations,
+} from '../../services/chatService';
 import { ChatsTabProps } from '../../navigation/types';
 
 export const ChatsScreen: React.FC<ChatsTabProps> = ({ navigation }) => {
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) {
+      setLoading(false);
+      return;
+    }
+
+    const unsubscribe = subscribeToConversations(currentUid, convList => {
+      setConversations(convList);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const filteredConversations = useMemo(() => {
     if (!searchQuery.trim()) {
-      return MOCK_CONVERSATIONS;
+      return conversations;
     }
-    const query = searchQuery.toLowerCase();
-    return MOCK_CONVERSATIONS.filter(
+    const query = searchQuery.toLowerCase().trim();
+    return conversations.filter(
       item =>
         item.name.toLowerCase().includes(query) ||
         item.lastMessage.toLowerCase().includes(query),
     );
-  }, [searchQuery]);
+  }, [conversations, searchQuery]);
 
   const handleOpenChat = (item: ConversationItem) => {
+    const currentUid = auth.currentUser?.uid;
+    if (currentUid) {
+      markConversationAsRead(currentUid, item.userId);
+    }
+
     navigation.navigate('ChatDetail', {
       userId: item.userId,
       userName: item.name,
@@ -67,7 +97,7 @@ export const ChatsScreen: React.FC<ChatsTabProps> = ({ navigation }) => {
             {item.unreadCount > 0 && (
               <View style={styles.unreadBadge}>
                 <Text style={styles.unreadText}>
-                  {item.unreadCount > 9 ? '9+' : item.unreadCount}
+                  {item.unreadCount > 99 ? '99+' : item.unreadCount}
                 </Text>
               </View>
             )}
@@ -97,21 +127,29 @@ export const ChatsScreen: React.FC<ChatsTabProps> = ({ navigation }) => {
         </View>
       </View>
 
-      <FlatList
-        data={filteredConversations}
-        keyExtractor={item => item.id}
-        renderItem={renderConversationItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>💬</Text>
-            <Text style={styles.emptyText}>
-              Không tìm thấy cuộc trò chuyện nào
-            </Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>Đang tải cuộc trò chuyện...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredConversations}
+          keyExtractor={item => item.id}
+          renderItem={renderConversationItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyIcon}>💬</Text>
+              <Text style={styles.emptyTitle}>Chưa có cuộc trò chuyện nào</Text>
+              <Text style={styles.emptyText}>
+                Hãy qua tab "Danh bạ" để chọn bạn bè và bắt đầu nhắn tin!
+              </Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 };
@@ -153,6 +191,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingVertical: 4,
+    flexGrow: 1,
   },
   chatItem: {
     flexDirection: 'row',
@@ -233,17 +272,36 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: 'bold',
   },
-  emptyContainer: {
-    paddingTop: 60,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#8E8E93',
+  },
+  emptyContainer: {
+    paddingTop: 80,
+    alignItems: 'center',
+    paddingHorizontal: 32,
   },
   emptyIcon: {
     fontSize: 48,
     marginBottom: 12,
   },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: '#1C1C1E',
+    marginBottom: 6,
+  },
   emptyText: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#8E8E93',
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
 

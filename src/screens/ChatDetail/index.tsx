@@ -1,5 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -10,46 +12,138 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { MessageItem, MOCK_MESSAGES } from '../../data/mockData';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { auth } from '../../services/firebase';
+import {
+  ChatMessage,
+  getChatRoomId,
+  markConversationAsRead,
+  sendMessage,
+  subscribeToMessages,
+  subscribeToUserOnlineStatus,
+} from '../../services/chatService';
+import {
+  getCurrentLocation,
+  openLocationInMap,
+} from '../../services/locationService';
 import { ChatDetailScreenProps } from '../../navigation/types';
 
 export const ChatDetailScreen: React.FC<ChatDetailScreenProps> = ({
   route,
   navigation,
 }) => {
-  const { userId, userName, userAvatar, isOnline } = route.params;
+  const insets = useSafeAreaInsets();
+  const { userId: otherUserId, userName, userAvatar, isOnline: initialOnline } =
+    route.params;
 
-  const initialMessages = MOCK_MESSAGES[userId] || MOCK_MESSAGES.default;
-  const [messages, setMessages] = useState<MessageItem[]>(initialMessages);
+  const currentUid = auth.currentUser?.uid || '';
+  const currentName =
+    auth.currentUser?.displayName || auth.currentUser?.email || 'Người dùng';
+  const currentAvatar =
+    auth.currentUser?.photoURL ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      currentName,
+    )}&background=007AFF&color=fff&size=150`;
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
+  const [otherUserOnline, setOtherUserOnline] = useState<boolean>(
+    !!initialOnline,
+  );
+  const [locating, setLocating] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  const handleSendMessage = () => {
-    if (!inputText.trim()) {
+  useEffect(() => {
+    const unsubStatus = subscribeToUserOnlineStatus(
+      otherUserId,
+      onlineStatus => {
+        setOtherUserOnline(onlineStatus);
+      },
+    );
+
+    return () => {
+      unsubStatus();
+    };
+  }, [otherUserId]);
+
+  useEffect(() => {
+    if (!currentUid || !otherUserId) {
       return;
     }
 
-    const now = new Date();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
+    markConversationAsRead(currentUid, otherUserId);
+    const chatRoomId = getChatRoomId(currentUid, otherUserId);
 
-    const newMessage: MessageItem = {
-      id: Date.now().toString(),
-      sender: 'me',
-      text: inputText.trim(),
-      time: `${hours}:${minutes}`,
+    const unsubMessages = subscribeToMessages(chatRoomId, messageList => {
+      setMessages(messageList);
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+
+    return () => {
+      unsubMessages();
+      markConversationAsRead(currentUid, otherUserId);
     };
+  }, [currentUid, otherUserId]);
 
-    setMessages(prev => [...prev, newMessage]);
+  const handleSendMessage = async () => {
+    const trimmed = inputText.trim();
+    if (!trimmed || !currentUid) {
+      return;
+    }
+
     setInputText('');
 
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+    try {
+      await sendMessage(
+        currentUid,
+        currentName,
+        currentAvatar,
+        otherUserId,
+        userName,
+        userAvatar,
+        trimmed,
+        'text',
+      );
+    } catch (error: any) {
+      setInputText(trimmed);
+      Alert.alert('Lỗi gửi tin nhắn', error?.message || 'Không thể gửi tin nhắn.');
+    }
   };
 
-  const renderMessageItem = ({ item }: { item: MessageItem }) => {
-    const isMe = item.sender === 'me';
+  const handleSendLocation = async () => {
+    if (!currentUid || locating) {
+      return;
+    }
+
+    setLocating(true);
+    try {
+      const coords = await getCurrentLocation();
+      if (coords) {
+        await sendMessage(
+          currentUid,
+          currentName,
+          currentAvatar,
+          otherUserId,
+          userName,
+          userAvatar,
+          '📍 Vị trí hiện tại',
+          'location',
+          coords,
+        );
+      }
+    } catch (error: any) {
+      Alert.alert('Lỗi chia sẻ vị trí', error?.message || 'Không thể gửi vị trí.');
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const renderMessageItem = ({ item }: { item: ChatMessage }) => {
+    const isMe = item.senderId === currentUid;
+    const isLocation = item.type === 'location' && item.location;
+
     return (
       <View
         style={[
@@ -64,14 +158,61 @@ export const ChatDetailScreen: React.FC<ChatDetailScreenProps> = ({
           style={[
             styles.bubble,
             isMe ? styles.bubbleMe : styles.bubbleOther,
+            isLocation && styles.bubbleLocation,
           ]}>
-          <Text
-            style={[
-              styles.messageText,
-              isMe ? styles.messageTextMe : styles.messageTextOther,
-            ]}>
-            {item.text}
-          </Text>
+          {isLocation ? (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() =>
+                openLocationInMap(
+                  item.location!.latitude,
+                  item.location!.longitude,
+                )
+              }>
+              <View style={styles.locationHeaderRow}>
+                <Text style={styles.locationIcon}>📍</Text>
+                <Text
+                  style={[
+                    styles.locationTitle,
+                    isMe ? styles.locationTitleMe : styles.locationTitleOther,
+                  ]}>
+                  Vị trí được chia sẻ
+                </Text>
+              </View>
+
+              <Text
+                style={[
+                  styles.coordText,
+                  isMe ? styles.coordTextMe : styles.coordTextOther,
+                ]}>
+                {item.location!.latitude.toFixed(5)},{' '}
+                {item.location!.longitude.toFixed(5)}
+              </Text>
+
+              <View
+                style={[
+                  styles.mapBtn,
+                  isMe ? styles.mapBtnMe : styles.mapBtnOther,
+                ]}>
+                <Text
+                  style={[
+                    styles.mapBtnText,
+                    isMe ? styles.mapBtnTextMe : styles.mapBtnTextOther,
+                  ]}>
+                  🗺️ Mở Google Maps
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <Text
+              style={[
+                styles.messageText,
+                isMe ? styles.messageTextMe : styles.messageTextOther,
+              ]}>
+              {item.text}
+            </Text>
+          )}
+
           <Text
             style={[
               styles.messageTime,
@@ -87,8 +228,14 @@ export const ChatDetailScreen: React.FC<ChatDetailScreenProps> = ({
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: Math.max(insets.top, 10),
+          },
+        ]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}>
@@ -97,15 +244,21 @@ export const ChatDetailScreen: React.FC<ChatDetailScreenProps> = ({
 
         <View style={styles.headerAvatarContainer}>
           <Image source={{ uri: userAvatar }} style={styles.headerAvatar} />
-          {isOnline && <View style={styles.headerOnlineDot} />}
+          {otherUserOnline && <View style={styles.headerOnlineDot} />}
         </View>
 
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerName} numberOfLines={1}>
             {userName}
           </Text>
-          <Text style={styles.headerStatus}>
-            {isOnline ? 'Đang hoạt động' : 'Offline'}
+          <Text
+            style={[
+              styles.headerStatus,
+              otherUserOnline
+                ? styles.headerStatusOnline
+                : styles.headerStatusOffline,
+            ]}>
+            {otherUserOnline ? 'Đang hoạt động' : 'Offline'}
           </Text>
         </View>
       </View>
@@ -117,12 +270,39 @@ export const ChatDetailScreen: React.FC<ChatDetailScreenProps> = ({
         renderItem={renderMessageItem}
         contentContainerStyle={styles.messagesList}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         onContentSizeChange={() =>
           flatListRef.current?.scrollToEnd({ animated: false })
         }
+        ListEmptyComponent={
+          <View style={styles.emptyMessagesContainer}>
+            <Text style={styles.emptyMessagesIcon}>👋</Text>
+            <Text style={styles.emptyMessagesText}>
+              Bắt đầu cuộc trò chuyện với {userName}!
+            </Text>
+          </View>
+        }
       />
 
-      <View style={styles.inputContainer}>
+      <View
+        style={[
+          styles.inputContainer,
+          {
+            paddingBottom: Math.max(insets.bottom, 10),
+          },
+        ]}>
+        <TouchableOpacity
+          style={[styles.locationButton, locating && styles.buttonDisabled]}
+          onPress={handleSendLocation}
+          disabled={locating}
+          activeOpacity={0.7}>
+          {locating ? (
+            <ActivityIndicator size="small" color="#007AFF" />
+          ) : (
+            <Text style={styles.locationButtonText}>📍</Text>
+          )}
+        </TouchableOpacity>
+
         <TextInput
           style={styles.textInput}
           placeholder="Nhập tin nhắn..."
@@ -202,11 +382,18 @@ const styles = StyleSheet.create({
   },
   headerStatus: {
     fontSize: 12,
+    fontWeight: '500',
+  },
+  headerStatusOnline: {
     color: '#34C759',
+  },
+  headerStatusOffline: {
+    color: '#8E8E93',
   },
   messagesList: {
     padding: 16,
     paddingBottom: 8,
+    flexGrow: 1,
   },
   messageRow: {
     flexDirection: 'row',
@@ -227,7 +414,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   bubble: {
-    maxWidth: '75%',
+    maxWidth: '78%',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 18,
@@ -241,6 +428,62 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 4,
     borderWidth: 1,
     borderColor: '#E8E8E8',
+  },
+  bubbleLocation: {
+    minWidth: 210,
+    paddingVertical: 12,
+  },
+  locationHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  locationIcon: {
+    fontSize: 18,
+    marginRight: 6,
+  },
+  locationTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  locationTitleMe: {
+    color: '#FFFFFF',
+  },
+  locationTitleOther: {
+    color: '#007AFF',
+  },
+  coordText: {
+    fontSize: 12,
+    marginBottom: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  coordTextMe: {
+    color: 'rgba(255, 255, 255, 0.85)',
+  },
+  coordTextOther: {
+    color: '#666666',
+  },
+  mapBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  mapBtnMe: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  mapBtnOther: {
+    backgroundColor: '#007AFF15',
+  },
+  mapBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  mapBtnTextMe: {
+    color: '#FFFFFF',
+  },
+  mapBtnTextOther: {
+    color: '#007AFF',
   },
   messageText: {
     fontSize: 15,
@@ -267,10 +510,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 8,
     borderTopWidth: 1,
     borderTopColor: '#EBEBEB',
+  },
+  locationButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F2F2F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  locationButtonText: {
+    fontSize: 20,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
   textInput: {
     flex: 1,
@@ -299,6 +557,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     marginLeft: 2,
+  },
+  emptyMessagesContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 60,
+  },
+  emptyMessagesIcon: {
+    fontSize: 48,
+    marginBottom: 10,
+  },
+  emptyMessagesText: {
+    fontSize: 14,
+    color: '#8E8E93',
+    textAlign: 'center',
   },
 });
 

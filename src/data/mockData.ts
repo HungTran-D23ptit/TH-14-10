@@ -207,12 +207,12 @@ export const MOCK_MESSAGES: Record<string, MessageItem[]> = {
 
 export const CURRENT_USER = {
   id: 'me',
-  name: 'Sinh Viên PTIT',
-  studentCode: 'B21DCCN999',
-  className: 'D21CQCN01-B',
-  major: 'Công nghệ thông tin',
-  email: 'sinhvien@ptit.edu.vn',
+  name: 'Trần Duy Hưng',
+  studentCode: 'B23DCCC083',
+  className: 'D23CCPM02',
+  major: 'Cử nhân Công nghệ thông tin',
+  email: 'B23DCCC083@ptit.edu.vn',
   phone: '0988 888 888',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+  avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
   bio: 'Lập trình viên React Native tương lai 🚀',
 };

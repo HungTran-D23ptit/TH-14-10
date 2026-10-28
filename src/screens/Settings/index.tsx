@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Image,
@@ -8,33 +8,74 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { CURRENT_USER } from '../../data/mockData';
+import { auth } from '../../services/firebase';
+import {
+  logoutUser,
+  subscribeToUserProfile,
+  UserProfile,
+} from '../../services/authService';
 import { SettingsTabProps } from '../../navigation/types';
 
 export const SettingsScreen: React.FC<SettingsTabProps> = ({ navigation }) => {
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    const currentUid = auth.currentUser?.uid;
+    if (!currentUid) {
+      return;
+    }
+
+    const unsubscribe = subscribeToUserProfile(currentUid, profile => {
+      if (profile) {
+        setUserProfile(profile);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   const handleLogout = () => {
     Alert.alert('Xác nhận đăng xuất', 'Bạn có chắc chắn muốn đăng xuất?', [
       { text: 'Hủy', style: 'cancel' },
       {
         text: 'Đăng xuất',
         style: 'destructive',
-        onPress: () => {
-          navigation.replace('Login');
+        onPress: async () => {
+          try {
+            await logoutUser();
+          } catch {}
+          navigation.getParent<any>()?.reset({
+            index: 0,
+            routes: [{ name: 'Login' }],
+          });
         },
       },
     ]);
   };
 
+  const displayName =
+    userProfile?.displayName || auth.currentUser?.displayName || 'Sinh Viên PTIT';
+  const email =
+    userProfile?.email || auth.currentUser?.email || 'sinhvien@ptit.edu.vn';
+  const avatar =
+    userProfile?.avatar ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      displayName,
+    )}&background=007AFF&color=fff&size=150`;
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.headerCard}>
         <View style={styles.avatarWrapper}>
-          <Image source={{ uri: CURRENT_USER.avatar }} style={styles.avatar} />
+          <Image source={{ uri: avatar }} style={styles.avatar} />
           <View style={styles.onlineBadge} />
         </View>
-        <Text style={styles.userName}>{CURRENT_USER.name}</Text>
-        <Text style={styles.userRole}>Sinh viên Học viện PTIT</Text>
-        <Text style={styles.userBio}>{CURRENT_USER.bio}</Text>
+        <Text style={styles.userName}>{displayName}</Text>
+        <Text style={styles.userBio}>
+          {userProfile?.bio || 'Lập trình viên React Native tương lai 🚀'}
+        </Text>
       </View>
 
       <View style={styles.infoSection}>
@@ -43,28 +84,34 @@ export const SettingsScreen: React.FC<SettingsTabProps> = ({ navigation }) => {
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Mã sinh viên</Text>
           <Text style={styles.infoValueHighlight}>
-            {CURRENT_USER.studentCode}
+            {userProfile?.studentCode || 'B23DCCC083'}
           </Text>
         </View>
 
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Lớp</Text>
-          <Text style={styles.infoValue}>{CURRENT_USER.className}</Text>
+          <Text style={styles.infoValue}>
+            {userProfile?.className || 'D23CCPM02'}
+          </Text>
         </View>
 
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Chuyên ngành</Text>
-          <Text style={styles.infoValue}>{CURRENT_USER.major}</Text>
+          <Text style={styles.infoValue}>
+            {userProfile?.major || 'Công nghệ thông tin'}
+          </Text>
         </View>
 
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Email</Text>
-          <Text style={styles.infoValue}>{CURRENT_USER.email}</Text>
+          <Text style={styles.infoValue}>{email}</Text>
         </View>
 
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Số điện thoại</Text>
-          <Text style={styles.infoValue}>{CURRENT_USER.phone}</Text>
+          <Text style={styles.infoValue}>
+            {userProfile?.phone || '0988 888 888'}
+          </Text>
         </View>
 
         <View style={[styles.infoRow, styles.lastRow]}>
@@ -125,12 +172,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1C1C1E',
     marginBottom: 4,
-  },
-  userRole: {
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '600',
-    marginBottom: 6,
   },
   userBio: {
     fontSize: 13,
@@ -194,19 +235,19 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#6d2cf8ff',
+    backgroundColor: '#34C759',
     marginRight: 6,
   },
   statusText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#181ff6ff',
+    color: '#34C759',
   },
   logoutButton: {
     marginHorizontal: 16,
     marginTop: 20,
     marginBottom: 36,
-    backgroundColor: '#401ffaff',
+    backgroundColor: '#FF3B30',
     height: 50,
     borderRadius: 12,
     justifyContent: 'center',
